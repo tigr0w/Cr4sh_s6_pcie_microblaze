@@ -8,7 +8,7 @@ size_t std_strlen(const char *str)
 
         for (; str[i] != '\0'; i++);
 
-        return i;        
+        return i;
     }
     
     return 0;

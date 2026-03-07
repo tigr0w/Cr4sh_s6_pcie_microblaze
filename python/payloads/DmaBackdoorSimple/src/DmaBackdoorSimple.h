@@ -35,8 +35,6 @@ typedef struct _INFECTOR_STATUS
 // physical address of INFECTOR_STATUS
 #define STATUS_ADDR (0x1000 - sizeof(INFECTOR_STATUS))
 
-#define MAX_IMAGE_SIZE (1 * 1024 * 1024)
-
 void ConsolePrint(char *Message);
 
 #endif

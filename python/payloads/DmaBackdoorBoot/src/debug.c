@@ -35,12 +35,12 @@ static char *NameFromPath(char *lpszPath)
 void DbgMsg(char *lpszFile, int Line, char *lpszMsg, ...)
 {
     va_list arglist;
-    char szBuff[MAX_STR_LEN], szMessage[MAX_STR_LEN];    
+    char szBuff[MAX_STR_LEN], szMessage[MAX_STR_LEN];
     size_t i = 0;
 
     szBuff[MAX_STR_LEN - 1] = '\0';
 
-    va_start(arglist, lpszMsg);    
+    va_start(arglist, lpszMsg);
     tfp_vsnprintf(szBuff, MAX_STR_LEN - 1, lpszMsg, arglist);
     va_end(arglist);
 
@@ -59,7 +59,7 @@ void DbgMsg(char *lpszFile, int Line, char *lpszMsg, ...)
 #if defined(BACKDOOR_DEBUG_OVMF)
 
         // send single byte to OVMF debug port
-        __outbyte(OVMF_DEBUG_PORT, szMessage[i]);        
+        __outbyte(OVMF_DEBUG_PORT, szMessage[i]);
 
 #elif defined(BACKDOOR_DEBUG_SERIAL)
 

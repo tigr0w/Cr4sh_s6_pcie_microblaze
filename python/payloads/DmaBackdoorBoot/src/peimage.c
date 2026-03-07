@@ -9,7 +9,7 @@
 BOOLEAN LdrProcessRelocs(VOID *Image, VOID *NewBase)
 {
     EFI_IMAGE_NT_HEADERS *pHeaders = (EFI_IMAGE_NT_HEADERS *)RVATOVA(
-        Image, ((EFI_IMAGE_DOS_HEADER *)Image)->e_lfanew);    
+        Image, ((EFI_IMAGE_DOS_HEADER *)Image)->e_lfanew);
 
     UINT32 RelocSize = pHeaders->OptionalHeader.DataDirectory[EFI_IMAGE_DIRECTORY_ENTRY_BASERELOC].Size;
     UINT32 RelocAddr = pHeaders->OptionalHeader.DataDirectory[EFI_IMAGE_DIRECTORY_ENTRY_BASERELOC].VirtualAddress;
@@ -34,22 +34,22 @@ BOOLEAN LdrProcessRelocs(VOID *Image, VOID *NewBase)
     while (RelocSize > Size && pRelocation->SizeOfBlock)
     {            
         UINT32 Num = (pRelocation->SizeOfBlock - sizeof(EFI_IMAGE_BASE_RELOCATION)) / sizeof(UINT16), i = 0;
-        UINT16 *Rel = (UINT16 *)RVATOVA(pRelocation, sizeof(EFI_IMAGE_BASE_RELOCATION));            
+        UINT16 *Rel = (UINT16 *)RVATOVA(pRelocation, sizeof(EFI_IMAGE_BASE_RELOCATION));
 
         for (i = 0; i < Num; i += 1)
         {
             if (Rel[i] > 0)
             {
                 UINT16 Type = (Rel[i] & 0xF000) >> 12;
-                VOID *Addr = (VOID *)RVATOVA(Image, pRelocation->VirtualAddress + (Rel[i] & 0x0FFF));                    
+                VOID *Addr = (VOID *)RVATOVA(Image, pRelocation->VirtualAddress + (Rel[i] & 0x0FFF));
 
 #if defined(_M_X64) || defined(__amd64__)
 
                 if (Type == EFI_IMAGE_REL_BASED_DIR64)
-                {                        
+                {
                     *(UINT64 *)Addr += (UINT64)NewBase - OldBase;
-                }                    
-#else                    
+                }
+#else
                 if (Type == EFI_IMAGE_REL_BASED_HIGHLOW)
                 {
                     *(UINT32 *)Addr += (UINT32)NewBase - OldBase;
@@ -64,14 +64,14 @@ BOOLEAN LdrProcessRelocs(VOID *Image, VOID *NewBase)
         }
 
         pRelocation = (EFI_IMAGE_BASE_RELOCATION *)RVATOVA(pRelocation, pRelocation->SizeOfBlock);
-        Size += pRelocation->SizeOfBlock;            
+        Size += pRelocation->SizeOfBlock;
     }
 
     return TRUE;
 }
 //--------------------------------------------------------------------------------------
 VOID *LdrGetProcAddress(VOID *Image, char *lpszFunctionName)
-{    
+{
     EFI_IMAGE_NT_HEADERS *pHeaders = (EFI_IMAGE_NT_HEADERS *)RVATOVA(
         Image, ((EFI_IMAGE_DOS_HEADER *)Image)->e_lfanew);
 
@@ -92,7 +92,7 @@ VOID *LdrGetProcAddress(VOID *Image, char *lpszFunctionName)
         UINT32 i = 0;
         UINT32 *AddressOfFunctions = (UINT32 *)RVATOVA(Image, pExport->AddressOfFunctions);
         UINT32 *AddressOfNames = (UINT32 *)RVATOVA(Image, pExport->AddressOfNames);
-        INT16 *AddrOfOrdinals = (INT16 *)RVATOVA(Image, pExport->AddressOfNameOrdinals);                
+        INT16 *AddrOfOrdinals = (INT16 *)RVATOVA(Image, pExport->AddressOfNameOrdinals);
 
         for (i = 0; i < pExport->NumberOfFunctions; i += 1)
         {
